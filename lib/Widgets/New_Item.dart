@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shopping_list_app/Data/Categories.dart';
 import 'package:shopping_list_app/Models/category_model.dart';
 import 'package:shopping_list_app/Models/grocery_item.dart';
+import 'package:http/http.dart' as https;
 
 class NewItem extends StatefulWidget {
   @override
@@ -14,7 +17,8 @@ class NewItem extends StatefulWidget {
 class _NewItemState extends State<NewItem> {
   var _selectedName = '';
   var _selectedQuantity = 1;
-  var _selectedCategory = categories[Categories.sweets];
+  var _selectedCategory = categories[Categories.sweets]!;
+  var _isSending = false;
 
   final _formkey = GlobalKey<FormState>();
   // difference between a Globalkey and a ValueKey is
@@ -29,16 +33,57 @@ class _NewItemState extends State<NewItem> {
   // to be more specific and also this will give us some extra type
   // checking and auto completion suggestions
 
-  void _saveItem() {
+  void _saveItem() async {
     if (_formkey.currentState!.validate()) {
       _formkey.currentState!.save();
-      Navigator.of(context).pop(
-          GroceryItem(
-          id: DateTime.now().toString(),
+
+      setState(() {
+        _isSending = true;
+      });
+
+      // uri.https creates a url that points at a HTTPS beckend
+      // we pasted the url present in the realtime firebase database
+      // but removed the https:// from the start as it is automatically
+      // included by the Uri.https
+      // the second argument in the uri.https is the path that will be created
+      // by us in the firebase and it creates a node in the database
+      // .json is not flutter specific ,it is required by the firebase
+      final url = Uri.https(
+          "shopping-list-flutter-e2644-default-rtdb.firebaseio.com",
+          "shopping-list.json");
+
+      //https.post is used to send such HTTP request to store data in firebase
+      final response = await https.post(url,
+
+          // content type : application/json helps firebase understand how the
+          // data we're sending to it will be formatted
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          // it is the that will be attached to the HTTPS request
+          // json is a special text based data format
+          body: json.encode(
+            {
+              "name": _selectedName,
+              "quantity": _selectedQuantity,
+              "category": _selectedCategory.grocery
+            },
+          ));
+
+      final Map<String, dynamic> resdata = json.decode(response.body);
+      if (!context.mounted) {
+        return;
+      }
+      //
+
+      Navigator.of(context).pop(GroceryItem(
+          id: resdata['name'],
           name: _selectedName,
           quantity: _selectedQuantity,
-          category: _selectedCategory!)
-      );
+          category: _selectedCategory));
+
+      // Navigator.of(context).pop();
     }
     //_formkey.currentState!.reset();
   }
@@ -136,7 +181,7 @@ class _NewItemState extends State<NewItem> {
                             )
                         ],
                         onChanged: (value) {
-                          _selectedCategory = value;
+                          _selectedCategory = value!;
                         }),
                   )
                 ],
@@ -149,12 +194,20 @@ class _NewItemState extends State<NewItem> {
                 children: [
                   const Spacer(),
                   TextButton(
-                      onPressed: () {
-                        _formkey.currentState!.reset();
-                      },
+                      onPressed: _isSending
+                          ? null
+                          : () {
+                              _formkey.currentState!.reset();
+                            },
                       child: const Text('Reset')),
                   ElevatedButton(
-                      onPressed: _saveItem, child: const Text('Add Item')),
+                      onPressed: _isSending ? null : _saveItem,
+                      child: _isSending
+                          ? SizedBox(
+                              height: 16,
+                              width: 15,
+                              child: CircularProgressIndicator())
+                          : const Text('Add Item')),
                 ],
               )
             ],
